@@ -1,245 +1,135 @@
-# LangGraph Advanced
+# AI-First HCP Engagement CRM
 
-This repository continues the LangGraph learning journey with a collection of advanced Jupyter notebooks. It focuses on real-world agent architectures, including dynamic tool loading, long-term memory management, human-in-the-loop control, and parallel execution. Designed for developers who already grasp the basics, this series helps you build scalable and production-ready AI workflows with LangGraph and LangChain.
+## 📋 Project Overview
+This project is a technical submission for **Task 1: AI-First CRM HCP Module**. It implements a "Log Interaction Screen" where the user interface is controlled entirely by an **AI Agent** (LangGraph + Groq), prohibiting manual form entry.
 
-## Getting Started
-
-### 1. Clone the Repository
-
-```bash
-git clone git@github.com:esurovtsev/langgraph-advanced.git
-cd langgraph-advanced
-```
-
-### 2. Set Up Your Python Environment
-
-It is recommended to use a virtual environment to manage dependencies:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-### 3. Install Dependencies
-
-```bash
-pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-## Usage
-
-- Follow the lessons in order (scripts or notebooks).
-- Each lesson will have an accompanying video tutorial.
-- Explanations and code comments will help you understand each concept.
-
-## Video Tutorials
-
-Each lesson will have a dedicated video tutorial. Links will be provided as lessons are released.
-
-## Contents
-
-1. **Prebuilt Agents** ([01_prebuilt-agents.ipynb](01_prebuilt-agents.ipynb))
-   - Deep dive into the architecture and workflow of prebuilt agents in LangGraph
-   - Explains the ReAct agent pattern: act, observe, reason, and how these steps form the backbone of agent logic
-   - Demonstrates defining and binding tools to LLMs using low-level APIs, including practical examples like stock symbol lookup and financial data retrieval
-   - Walks through constructing a state graph for agent execution, including system and tool nodes, routing, and memory management
-   - Real-world scenario: Building an agent that fetches and analyzes financial data for companies (e.g., Tesla), showing the full reasoning and tool invocation loop
-   - [LangGraph Advanced – Build AI Agents with Prebuilt Agents and Memory](https://www.youtube.com/watch?v=_0-OoRyFwpo)
-2. **Dynamic Models & Prompt Customization** ([02_dynamic-models-prompts.ipynb](02_dynamic-models-prompts.ipynb))
-   - Advanced techniques for creating adaptive AI agents with dynamic model selection and role switching
-   - Implementing context-aware model selection that chooses different LLMs based on task complexity (e.g., GPT-4 for analysis, GPT-4o-mini for summarization)
-   - Creating dynamic prompt modifiers that adapt agent roles and behaviors in response to user queries
-   - Combining both techniques to build sophisticated agents that can switch between financial advisor, teacher, or summarizer roles
-   - Real-world example: Building a financial analysis agent that adapts both its underlying model and persona based on query complexity
-   - [LangGraph Advanced – Build AI Agents with Dynamic Model Selection and Role Switching](https://www.youtube.com/watch?v=bV1K8B4m5PI)
-3. **Structured Output with Prebuilt Agents** ([03_structured_output_with_prebuilt_agents.ipynb](03_structured_output_with_prebuilt_agents.ipynb))
-   - Why structured output matters for production apps that need machine-readable results, not just chat text
-   - Define a Pydantic schema (e.g., `FinancialInfo`) and pass it via `response_format` to `create_react_agent` (v2)
-   - Understand the added graph step to generate a structured response and how to access it from the agent state
-   - Trade-offs: extra LLM call cost; alternatives include treating the schema as a tool or using a post-model hook with custom state to capture JSON without extra calls
-   - Real-world example: TSLA analysis producing JSON fields like company_name, stock_symbol, current_price, market_cap, summary, risk_assessment
-   - [LangGraph Advanced – Generate Structured Output in AI Agents Using Prebuilt LangGraph APIs](https://www.youtube.com/watch?v=3Q31aObRBMo)
-4. **Human-in-the-Loop Interruption with Prebuilt Agents** ([04_prebuilt_hitl_dynamic_interrupt.ipynb](04_prebuilt_hitl_dynamic_interrupt.ipynb))
-   - When and why to add human approvals for risky actions (e.g., placing market/limit orders)
-   - Two approaches:
-     - Static: `interrupt_before=["tools"]` to always pause before the tools node (simple but coarse-grained)
-     - Dynamic: raise `interrupt(...)` inside `post_model_hook` when the LLM proposes a risky tool call
-   - Implementation details:
-     - Maintain `RISKY_TOOLS = {"place_order"}` and inspect the last `AIMessage.tool_calls`
-     - Enable a checkpointer (e.g., `InMemorySaver`) and pass a `thread_id` so runs can be paused and resumed
-     - Read the interruption payload from the response to render an approval UI, then resume with a `Command(...)` carrying the decision
-   - Resume paths:
-     - Approve: proceed to execute the tool normally
-     - Decline: inject a `ToolMessage` like “Action cancelled by human” and continue the agent flow without executing the tool
-   - Real-world example: Buying TSLA shares with approve/decline flows demonstrated end-to-end
-   - [LangGraph Advanced – Use Dynamic Human in the Loop Interruption in Prebuilt AI Agents](https://www.youtube.com/watch?v=8_UQNWTbvEQ)
-5. **Multi-Agent Systems with Supervisor Architecture** ([05_multi_agent_supervisor.ipynb](05_multi_agent_supervisor.ipynb))
-   - Build a supervisor-led multi-agent system that delegates between specialized workers
-   - Define `research_agent` (Tavily + Wikipedia) to pick ONE company with a brief rationale
-   - Define `trading_agent` (ticker lookup, market data via yfinance, order placement) to execute trades from a budget
-   - Use `create_supervisor` to orchestrate routing, handoffs, and guardrails; view graph and xray
-   - Establish shared time context via a `current_timestamp` tool and post a one-line “NOW” note for recency
-   - Routing rules: thematic/ambiguous → research; explicit company + action/budget → trading; ask once if a key detail is missing
-   - Handoff: pass chosen company from research to trading; avoid fabricating data; summarize delegated steps and results
-   - Real-world flow: invest $1,000 in AI/renewables—research selects a company, trading sizes the order and places a buy
-   - [LangGraph Advanced – Build Multi-Agent AI Systems with Supervisor Architecture](https://www.youtube.com/watch?v=TK9kf6a9i10)
-
-6. **Supervisor + Human-in-the-Loop in Multi-Agent Systems** ([06_supervisor_with_hitl.ipynb](06_supervisor_with_hitl.ipynb))
-   - Combine supervisor-led delegation with HITL approvals inside child agents (e.g., `trading_agent`).
-   - Child interruptions bubble to the supervisor when the checkpointer is owned by the parent; resume the run by invoking the supervisor (not the child) with the same `thread_id`.
-   - Implementation:
-     - `trading_agent` uses a `post_model_hook` (`halt_on_risky_tools`) to detect `RISKY_TOOLS = {"place_order"}` and call `interrupt({"awaiting": name, "args": {...}})`.
-     - On decline, inject a `ToolMessage` like “Cancelled by human…” and continue planning without executing the tool.
-     - Supervisor compiled with `InMemorySaver()` (`.compile(checkpointer=...)`) and `output_mode="full_history"`; visualize routing with `xray`.
-     - Interact only with the supervisor; to resume, use `Command(resume={"approved": True|False})` and a stable `configurable.thread_id`.
-     - Inspect `response["__interrupt__"]` to render an approval UI; helper `print_tool_approval(...)` shows the tool and parameters.
-   - Shared time context: call `current_timestamp` once and post a one-line “NOW” note to the thread for recency across agents.
-   - Test flows: approve path, reject path, update request (e.g., “buy only 3 shares of NVIDIA”), and continue within the same thread.
-   - Real-world flow: invest $1,000 with an approval gate before order placement; supervisor coordinates research → trading and handles pause/resume.
-   - [LangGraph Advanced – Combine Supervisor Architecture with Human-in-the-Loop in Multi-Agent AI Systems](https://www.youtube.com/watch?v=W349TTcB0Ng)
-
-7. **Add Long-Term Memory to Multi-Agent AI Systems with Supervisor Architecture** ([07_supervisor_long_term_memory.ipynb](07_supervisor_long_term_memory.ipynb))
-   - Integrate persistent memory using `InMemoryStore` across supervisor and child agents for user-specific order history.
-   - Define memory tools: `get_order_history` (retrieve past orders by `user_id` namespace) and `add_order_to_history` (record new trades with symbol, shares, price).
-   - Research agent: recommends ONE publicly tradable company using `web_search` and `wiki_search` tools, ends with "CHOSEN_COMPANY: <Name>".
-   - Portfolio agent: executes trades for the exact recommended company using `lookup_stock_symbol`, `fetch_stock_data_raw`, `place_order`, and records via `add_order_to_history`.
-   - Supervisor: delegates to research (for ideas) or portfolio (for execution); uses shared store via `get_global_store()` and temporal context from `current_timestamp`.
-   - User isolation: namespace `user_id` for memory access; use `get_user_store()` to access the user’s store.
-   - Real-world flow: invest $1,000 in EV or AI industry—research picks company, portfolio trades and records; query "how many shares do I own?" using memory.
-   - [LangGraph Advanced – Add Long Term Memory to Multi Agent AI Systems with Supervisor Architecture](https://www.youtube.com/watch?v=piri_eR7s)
-
-8. **Custom Handoffs in Supervisor Architecture** ([08_supervisor_custom_handoff.ipynb](08_supervisor_custom_handoff.ipynb))
-   - Improve task reasoning with targeted delegation and shared context
-   - Define a custom handoff tool using `create_task_instructions_handoff_tool(...)` to pass explicit `task_instructions` and route control via `Command(goto=...)`
-   - Extend agent state with `TaskState(AgentState)` to carry `task_instructions` across handoffs; compile agents/supervisor with `state_schema=TaskState`
-   - Use `InjectedState` and `InjectedToolCallId` inside tools to access current state and emit a `ToolMessage` containing handoff metadata (`METADATA_KEY_HANDOFF_DESTINATION`) for xray tracing
-   - Supervisor tools include `current_timestamp`, `get_order_history`, and two handoff tools (to `portfolio` and `research`) to guide precise sub-tasks
-   - Portfolio and research agents reuse earlier tools (lookup, market data via yfinance, search) while supervisor orchestrates when to fetch prices vs. query memory
-   - Demonstration: "How are my investments performing?" → supervisor retrieves order history, delegates to portfolio to fetch current prices, then summarizes performance
-   - Compiled with `InMemorySaver()` and `output_mode="full_history"` to visualize routing and handoffs
-   - [LangGraph Advanced – Improve Multi Agent AI Systems with Custom Handoffs in Supervisor Architecture](https://www.youtube.com/watch?v=rn4TkOGYU64)
-
-9. **Build Hierarchical Multi-Level Supervisor Architectures and Swarm AI Agents** ([09_supervisor_hierarchy_and_swarm.ipynb](09_supervisor_hierarchy_and_swarm.ipynb))
-   - Create hierarchical multi-level supervisor architectures where supervisors control other supervisors.
-   - Extract specialized agents into sub-supervisors: portfolio_supervisor (symbol_lookup, market_data, order_execution, record_keeping) and research_supervisor (web_search, wiki_search).
-   - Build a super_supervisor that orchestrates research_supervisor, portfolio_supervisor, timestamp, and history agents for end-to-end workflows.
-   - Implement swarm AI agents using `create_swarm()` for parallel handoffs between agents without hierarchy (e.g., web_search ↔ market_data).
-   - Compile with `InMemorySaver()` and `output_mode="full_history"` to visualize routing and handoffs.
-
-10. **Simplify Multi-Agent AI Systems by Turning Sub-Agents into Tools with Supervisor Architecture** ([10_supervisor_as_tools.ipynb](10_supervisor_as_tools.ipynb))
-   - Alternative supervisor architecture where sub-agents are turned into tools instead of sharing message lists.
-   - Define `@tool` functions like `research_agent_tool` and `trading_agent_tool` that invoke isolated runs of sub-agents with `RunnableConfig`, passing a task and returning the last `AIMessage` response.
-   - Supervisor is a single `create_react_agent` with tools including `current_timestamp`, `research_agent_tool`, `trading_agent_tool`; no sub-agents under control.
-   - Benefits: isolated executions (no shared message confusion), easier parallelism, clear task definitions.
-   - Drawbacks of traditional shared-message supervisors: long threads confuse agents, hard to parallelize, state sharing issues.
-   - Demonstration: invest $1,000 in AI company → supervisor calls research tool (isolated: web_search/wiki_search → recommends MSFT) → calls trading tool (isolated: lookup/fetch/place → executes order) → summarizes.
-   - [LangGraph Advanced – Simplify Multi-Agent AI Systems by Turning Sub-Agents into Tools with Supervisor Architecture](https://www.youtube.com/watch?v=O7GDyJZ5X8)
-
-11. **Build a Custom Supervisor from Scratch** ([11_supervisor_from_scratch.ipynb](11_supervisor_from_scratch.ipynb))
-  - Implement a supervisor two ways: high-level API and low-level LangGraph primitives.
-  - High-level: use `create_supervisor(...)` with `research` and `portfolio` agents, add tools `current_timestamp`, `get_order_history`, compile with `InMemorySaver` and `output_mode="full_history"`.
-  - Low-level: build a custom graph with `StateGraph(MessagesState)`, explicit `START` → `supervisor` edge, return edges from `research`/`portfolio` back to `supervisor`, and destinations `("research", "portfolio", END)`.
-  - Create handoff tools with `create_handoff_tool(agent_name=...)` to route control, emitting a `ToolMessage` and returning `Command(goto=...)` to switch nodes.
-  - Agents: `research_agent` (web and wiki search) for one publicly tradable company; `portfolio_agent` (symbol lookup, market data, place_order, add_order_to_history) for execution and recording.
-  - Shared store: initialize and access with `InMemoryStore` via `get_global_store()`; memory-aware tools use `RunnableConfig` with `user_id` namespaces `("ledger", user_id)`.
-  - End-to-end demo: “invest $1,000 into the most promising AI company” → supervisor delegates research → verifies price → executes a buy → records order → returns a clear summary.
-  - [LangGraph Advanced – Build a Custom Supervisor in AI Multi Agent Systems from Scratch](https://www.youtube.com/watch?v=wgY3IT6j0b0)
-
-12. **Use MCP Servers in AI Agents with Supervisor Architecture** ([12_mcp_supervisor_agents.ipynb](12_mcp_supervisor_agents.ipynb))
-  - Load MCP server definitions from `mcp_config.json` and initialize a `MultiServerMCPClient` to fetch 70+ GitHub automation tools.
-  - Demonstrate a single `github_agent` ReAct worker bound to all MCP tools on a GitHub activity summary request.
-  - Surface tool overload concerns and auto-generate 3–4 specialized agents via `ChatOpenAI.with_structured_output(AgentDefinitions)` to cluster tools by responsibility.
-  - Instantiate focused agents with assigned tool subsets, then assemble them under `create_supervisor(...)` using the generated system messages and responsibilities.
-  - Supervisor orchestrates GitHub workflows by routing between specialists and returning consolidated responses; tested on analyzing work in `langgraph-advanced`.
-  - [LangGraph Advanced – Use MCP Servers in AI Agents with Supervisor Architecture](https://www.youtube.com/watch?v=2QjrYLT9NMw)
-
-13. **Dynamically Select Tools in AI Agents for Cleaner and Smarter Workflows** ([13_dynamic_tool_selection.ipynb](13_dynamic_tool_selection.ipynb))
-  - Learn why tool overload degrades agent performance: too many tool descriptions confuse the LLM, leading to poor tool selection and unpredictable reasoning.
-  - Understand the problem: binding 70+ MCP tools to a single agent creates context pollution and makes the model struggle to identify the right tool for each task.
-  - Master dynamic tool selection: use a separate LLM call with structured output (`ToolSelection` schema) to analyze the user query and select only the 5–7 most relevant tools before agent execution.
-  - Implement runtime tool filtering with `Runtime[CustomContext]` and a `configure_model` function that binds only the pre-selected tools to the agent model at runtime.
-  - Compare workflows: baseline (all tools bound) vs. optimized (dynamically filtered tools) to see improved accuracy, reduced token usage, and cleaner reasoning chains.
-  - Apply this pattern to any agent with large tool sets (MCP servers, API collections, enterprise tool catalogs) to maintain predictable behavior as your tool library grows.
-  - [LangGraph Advanced – Dynamically Select Tools in AI Agents for Cleaner and Smarter Workflows](https://www.youtube.com/watch?v=qGaRj3lUfps)
-
-14. **Use LangGraph BigTool and Semantic Search to Manage Large Toolsets in AI Agents** ([14_bigtool_semantic_search.ipynb](14_bigtool_semantic_search.ipynb))
-  - Understand semantic search as an alternative to LLM-based tool selection: use embeddings and vector similarity instead of structured LLM calls to find relevant tools.
-  - Learn to build a tool registry with unique identifiers and index tool descriptions in `InMemoryStore` with embedding-based search capabilities (`text-embedding-3-small`).
-  - Master the `langgraph_bigtool.create_agent()` pattern: configure a `limit` parameter to retrieve only the top-N semantically similar tools per query, reducing context size automatically.
-  - Compare three approaches for large toolsets: (1) bind all tools (context pollution), (2) LLM pre-filtering (extra call + cost), (3) semantic search (no LLM call but less intelligent matching).
-  - Recognize the trade-off: semantic search is faster and cheaper but may miss tools with poor descriptions or subtle semantic differences; LLM selection is slower but more contextually aware.
-  - Apply this knowledge to choose the right tool selection strategy based on your constraints: latency requirements, cost budgets, tool description quality, and semantic diversity of your tool library.
-  - Discover how the same semantic search technique can replace LLM-based categorization from the previous lesson for dynamic tool selection in standard ReAct agents.
-  - [LangGraph Advanced – Use LangGraph BigTool and Semantic Search to Manage Large Toolsets in AI Agents](https://www.youtube.com/watch?v=iBcRiTtvBXU)
-
-15. **Let AI Agents Ask Humans: Build Dynamic Human-in-the-Loop Workflows** ([15_dynamic_hitl_agents.ipynb](15_dynamic_hitl_agents.ipynb))
-  - Understand the difference between approval-based HITL (Lesson 4: approve/decline risky actions) and query-based HITL (agents proactively ask questions when information is missing).
-  - Learn to build an `ask_question` tool that uses `interrupt()` to pause agent execution, collect human input, and resume with the response—enabling agents to gather missing information autonomously.
-  - Master the pattern: agent detects missing parameters (e.g., "buy some Tesla stock" without budget), calls `ask_question("What is your investment budget?")`, waits for human response, then continues execution.
-  - Implement the resume flow: check `response["__interrupt__"]` to detect paused state, extract the question from `interrupts[0].value["question"]`, and resume with `Command(resume="user answer")`.
-  - Compare agent behavior with and without the `ask_question` tool: without it, agents either fabricate missing data or fail to act; with it, they proactively request clarification and complete tasks correctly.
-  - Apply this technique to build more autonomous agents that handle ambiguous requests gracefully: instead of making assumptions or asking vague questions, they identify specific missing information and request it explicitly.
-  - Recognize when to use each HITL pattern: approval gates for risk management (risky actions), query tools for information gathering (missing parameters, user preferences, clarifications).
-  - [LangGraph Advanced – Let AI Agents Ask Humans: Build Dynamic Human-in-the-Loop Workflows](https://www.youtube.com/watch?v=QS2NjzAQGUY)
-
-16. **Add Human-in-the-Loop Control Directly to Tools in AI Agent Workflows** ([16_tool_level_hitl_control.ipynb](16_tool_level_hitl_control.ipynb))
-  - Learn the limitation of `post_model_hook` HITL (Lesson 4): requires modifying agent configuration and doesn't work with third-party tools like MCP tools that you don't control.
-  - Master the `add_approval()` wrapper pattern: create a universal decorator that wraps any tool (including MCP tools) with HITL logic without modifying the original tool code.
-  - Understand the wrapper implementation: intercept tool calls with `interrupt()`, wait for approval decision, execute the original tool if approved, or return cancellation message if declined.
-  - Compare two HITL approaches: (1) `post_model_hook` (agent-level, requires agent modification), (2) tool wrapper (tool-level, works with any tool including third-party).
-  - Apply selective wrapping: use list comprehension to wrap only risky tools (`add_approval(tool) if tool.name in RISKY_TOOLS else tool`) while leaving safe tools unchanged.
-  - Recognize the key advantage: tool wrappers enable HITL for tools you don't own or can't modify (MCP servers, external APIs, library tools) by adding approval logic at the integration layer.
-  - Implement the same approve/decline flow as Lesson 4 but with cleaner separation: HITL logic lives in the wrapper, not in agent hooks, making it reusable across different agents and architectures.
-  - [LangGraph Advanced – Add Human in the Loop Control Directly to Tools in AI Agent Workflows](https://www.youtube.com/watch?v=snI7BvB4Qxg)
-
-17. **Standardize Human-in-the-Loop Workflows** ([17_unified_hitl_format.ipynb](17_unified_hitl_format.ipynb))
-   - Combine question-based HITL prompts and approval gates in a single ReAct agent to show end-to-end human oversight flows.
-   - Diagnose inconsistent interrupt payloads from earlier lessons and motivate adopting LangGraph's `HumanInterrupt` / `HumanResponse` schema.
-   - Wrap risky tools with `add_approval(...)` that emits `ActionRequest` plus `HumanInterruptConfig`, enabling accept, ignore, and optional edit paths with consistent resumes.
-   - Rebuild the `ask_question` helper around the same schema so clarification prompts share the standardized configuration knobs (allow_ignore, allow_respond, etc.).
-   - Walk through the full interaction loop: initial question pause, resume via `HumanResponse`, approval interrupt, accept/edit handling, and final execution summary.
-   - Demonstrate how unified payloads plug into AgentChat UI and other frontends that expect structured HITL events.
-   - [LangGraph Advanced – Standardize Human in the Loop Workflows in AI Agents with Unified HITL Format](https://www.youtube.com/watch?v=8pIBH2dMTI0)
-
-## Running Agents in `studio` Using LangGraph Studio (Web Interface)
-
-To run agents (such as those found in the `studio` directory) using the LangGraph Studio web interface for local development, follow these steps:
-
-1. **Install Required Dependencies**
-   Make sure all dependencies for your agent are installed:
-   ```bash
-   pip install -r studio/requirements.txt
-   ```
-
-2. **Install the LangGraph CLI**
-   ```bash
-   pip install -U "langgraph-cli[inmem]"
-   ```
-
-4. **Start the Local LangGraph Development Server**
-   From the `studio` directory, run:
-   ```bash
-   langgraph dev
-   ```
-   This will start the local LangGraph server in watch mode.
-
-4. **Open LangGraph Studio in Your Browser**
-   Once the server is running, you can access the Studio UI at:
-   [https://smith.langchain.com/studio/?baseUrl=http://127.0.0.1:2024](https://smith.langchain.com/studio/?baseUrl=http://127.0.0.1:2024)
-   (If your server is running at a different host/port, update the `baseUrl` accordingly.)
-
-For more details and troubleshooting, see the [official LangGraph Studio Quickstart](https://langchain-ai.github.io/langgraph/cloud/how-tos/studio/quick_start/).
-
-
-## Contributing
-
-Feedback and contributions are welcome! Please open issues or submit pull requests for suggestions and improvements.
-
-## License
-
-[Specify your license here, e.g., MIT]
+The system captures unstructured natural language input from a sales representative, extracts complex entities (Attendees, Materials, Outcomes), and automatically populates a structured React/Redux form. It solves key challenges like deterministic timekeeping and hallucination prevention using a robust tool-driven architecture.
 
 ---
 
-*This README will be updated as the course progresses. Stay tuned for new lessons and videos!*
+## 🚀 Tech Stack
+
+### Frontend
+* **Framework:** React 18
+* **State Management:** Redux Toolkit
+* **Styling:** Tailwind CSS
+* **HTTP Client:** Axios
+
+### Backend
+* **Framework:** FastAPI (Python 3.12)
+* **Server:** Uvicorn
+* **Database:** SQLite (`crm_v2.db`) for persistent interaction logging
+
+### AI Engine
+* **Orchestration:** LangGraph (StateGraph Architecture)
+* **LLM:** Groq API (`llama-3.3-70b-versatile`)
+* **Tooling:** Custom Python functions with Pydantic validation
+
+---
+
+## 🏗️ System Architecture
+
+### 1. The AI Agent (Backend)
+The backend utilizes a **LangGraph ReAct Agent** with a custom "One-Shot" graph structure to prevent recursion loops.
+* **Deterministic Timekeeping:** The Python runtime aggressively overwrites any time/date hallucinated by the LLM with the precise server timestamp (`datetime.now()`).
+* **Robust Tooling:** The `log_interaction` tool uses `Optional` types and safe defaults to prevent crashes when the AI skips fields.
+* **Schema Validation:** Pydantic models ensure that the LLM outputs strict JSON structures (e.g., converting "Dr. House and Dr. Chase" into `["Dr. House", "Dr. Chase"]`).
+
+### 2. The UI (Frontend)
+The React frontend listens for structured JSON commands from the backend:
+* **`FILL_FORM`**: Populates text fields and maps arrays to interactive UI tags.
+* **`UPDATE_FIELD`**: Allows for granular corrections (e.g., "Change sentiment to Negative").
+
+---
+
+## 🛠️ Implemented Tools
+
+| Tool Name | Type | Description |
+| :--- | :--- | :--- |
+| **`log_interaction`** | **Mandatory** | Extracts HCP Name, Date, Time, Topics, Attendees, Materials, Samples, Sentiment, Outcomes, and Follow-up. Forces live time injection and logs the full record to SQLite. |
+| **`edit_interaction`** | **Mandatory** | Modifies specific form fields based on natural language correction commands (e.g., "Change sentiment to Positive"). |
+| **`get_hcp_profile`** | *Context* | Retrieves static context about the HCP (Specialty, Hospital) to simulate a database lookup. |
+| **`get_product_info`** | *Knowledge* | Fetches product efficacy/safety data to answer rep queries during logging. |
+| **`schedule_follow_up`** | *Action* | Simulates an external calendar booking action based on the conversation. |
+
+---
+
+## ⚡ Installation & Setup
+
+### Prerequisites
+* Python 3.10+
+* Node.js & npm
+* Groq API Key
+
+### 1. Backend Setup
+1.  Navigate to the root directory:
+    ```bash
+    cd HCP_CRM_Project
+    ```
+2.  Create and activate a virtual environment (optional but recommended):
+    ```bash
+    python3 -m venv venv
+    source venv/bin/activate
+    ```
+3.  Install dependencies:
+    ```bash
+    pip install -r requirements.txt
+    ```
+    *(Ensure `fastapi`, `uvicorn`, `langchain-groq`, `langgraph`, `pydantic`, and `python-dotenv` are installed)*
+4.  Set your Groq API Key:
+    ```bash
+    export GROQ_API_KEY="your_actual_api_key_here"
+    ```
+5.  Start the Backend Server:
+    ```bash
+    uvicorn backend.main:app --reload
+    ```
+    *Server running at: `http://127.0.0.1:8000`*
+
+### 2. Frontend Setup
+1.  Open a new terminal and navigate to the frontend folder:
+    ```bash
+    cd frontend
+    ```
+2.  Install dependencies:
+    ```bash
+    npm install
+    ```
+3.  Start the React App:
+    ```bash
+    npm start
+    ```
+    *Client running at: `http://localhost:3000`*
+
+---
+
+## 🧪 Usage Scenarios
+
+### Scenario 1: Complex Logging (Smart Fill)
+**Prompt:**
+> "Log a meeting with Dr. House regarding Lupus. Attendees: Dr. Chase. Shared: MRI Scan. Sentiment: Negative. Outcome: Patient unstable. Follow up: Schedule biopsy."
+
+**Result:**
+* **HCP:** Dr. House
+* **Attendees:** [Dr. Chase] (Tag)
+* **Materials:** [MRI Scan] (Tag)
+* **Sentiment:** Negative (Checked)
+* **Date/Time:** **Auto-filled with current live server time.**
+* **Database:** Record saved to `crm_v2.db`.
+
+### Scenario 2: Correction (Edit Mode)
+**Prompt:**
+> "Change sentiment to Positive."
+
+**Result:**
+* The `edit_interaction` tool is called.
+* Only the "Positive" checkbox is updated; all other data remains value.
+
+### Scenario 3: Live Time Injection
+**Prompt:**
+> "Log a call right now."
+
+**Result:**
+* The AI passes empty strings for date/time.
+* The Python backend detects this and injects `datetime.now()`.
+* The form displays the exact current date and time.
